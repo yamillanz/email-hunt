@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yamillanz/email-hunt/internal/generator"
+	"github.com/yamillanz/email-hunt/internal/output"
 	"github.com/yamillanz/email-hunt/internal/verifier"
 )
 
@@ -91,33 +92,10 @@ func run() int {
 	ctx := context.Background()
 	results := verifier.VerifyAll(ctx, emails, *concurrency, *delay)
 
-	printResults(results)
+	fmt.Fprintln(os.Stderr)
+	output.PrintTable(results)
+	fmt.Fprintln(os.Stderr, "\nDisclaimer: Use this information responsibly and only for legitimate purposes.")
 	return 0
-}
-
-func printResults(results []verifier.Result) {
-	fmt.Println()
-	fmt.Println("Results:")
-	fmt.Println("-------")
-
-	for _, r := range results {
-		statusIcon := "?"
-		switch r.Status {
-		case verifier.StatusValid:
-			statusIcon = "✓"
-		case verifier.StatusInvalid:
-			statusIcon = "✗"
-		case verifier.StatusCatchAll:
-			statusIcon = "~"
-		}
-		category := ""
-		if r.Category.String() != "standard" {
-			category = " [" + r.Category.String() + "]"
-		}
-		fmt.Printf("  %s %s — %s%s\n", statusIcon, r.Email, r.Status, category)
-	}
-	fmt.Println()
-	fmt.Println("Disclaimer: Use this information responsibly and only for legitimate purposes.")
 }
 
 var domainRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$`)
