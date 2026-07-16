@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/yamillanz/email-hunt/internal/ai"
 	"github.com/yamillanz/email-hunt/internal/generator"
 	"github.com/yamillanz/email-hunt/internal/output"
 	"github.com/yamillanz/email-hunt/internal/verifier"
@@ -84,9 +85,34 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "Error: could not generate any email combinations\n")
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "Generated %d combinations\n", len(emails))
+	fmt.Fprintf(os.Stderr, "Generated %d deterministic combinations\n", len(emails))
 
-	// TODO: Phase 8 — AI provider: append additional combinations here
+	if *aiProvider != "" {
+		fmt.Fprintf(os.Stderr, "Generating AI combinations via %s...\n", *aiProvider)
+		aiProv, err := ai.NewProvider(*aiProvider)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
+		}
+		aiEmails, err := aiProv.Generate(context.Background(), fullName, domain)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: AI generation failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "AI generated %d additional combinations\n", len(aiEmails))
+
+		seen := make(map[string]bool)
+		for _, e := range emails {
+			seen[e] = true
+		}
+		for _, e := range aiEmails {
+			if !seen[e] {
+				seen[e] = true
+				emails = append(emails, e)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "Total combinations after dedup: %d\n", len(emails))
+	}
 
 	fmt.Fprintf(os.Stderr, "Verifying with %d workers, %s delay...\n", *concurrency, *delay)
 	ctx := context.Background()
