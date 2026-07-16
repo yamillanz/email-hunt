@@ -292,3 +292,83 @@ func TestVerifyAllContextCancel(t *testing.T) {
 		t.Errorf("expected 1 result, got %d", len(results))
 	}
 }
+
+func TestRandomString(t *testing.T) {
+	s1, err := randomString(10)
+	if err != nil {
+		t.Fatalf("randomString failed: %v", err)
+	}
+	if len(s1) != 10 {
+		t.Errorf("expected length 10, got %d", len(s1))
+	}
+
+	s2, err := randomString(10)
+	if err != nil {
+		t.Fatalf("second randomString failed: %v", err)
+	}
+	if s1 == s2 {
+		t.Error("two random strings should not be equal")
+	}
+}
+
+func TestRandomStringZero(t *testing.T) {
+	s, err := randomString(0)
+	if err != nil {
+		t.Fatalf("randomString(0) failed: %v", err)
+	}
+	if s != "" {
+		t.Errorf("expected empty string, got %q", s)
+	}
+}
+
+func TestExtractDomain(t *testing.T) {
+	tests := []struct {
+		email string
+		want  string
+	}{
+		{"john@example.com", "example.com"},
+		{"user@subdomain.domain.co.uk", "subdomain.domain.co.uk"},
+		{"not-an-email", ""},
+		{"@nouser.com", "nouser.com"},
+		{"nodomain@", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.email, func(t *testing.T) {
+			got := extractDomain(tt.email)
+			if got != tt.want {
+				t.Errorf("extractDomain(%q) = %q, want %q", tt.email, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStatusValues(t *testing.T) {
+	if int(StatusUnknown) != 0 {
+		t.Errorf("StatusUnknown should be 0 (iota base)")
+	}
+	if int(StatusValid) != 1 {
+		t.Errorf("StatusValid should be 1")
+	}
+	if int(StatusInvalid) != 2 {
+		t.Errorf("StatusInvalid should be 2")
+	}
+	if int(StatusCatchAll) != 3 {
+		t.Errorf("StatusCatchAll should be 3")
+	}
+}
+
+func TestVerifyWithMockServer(t *testing.T) {
+	srv := newMockSMTPServer(t, mockValidHandler())
+	defer srv.close()
+
+	ctx := context.Background()
+
+	status, _, err := dialAndVerify(ctx, srv.addr, "real.user@example.com")
+	if err != nil {
+		t.Fatalf("verify failed: %v", err)
+	}
+	if status != StatusValid {
+		t.Errorf("expected StatusValid, got %v", status)
+	}
+}
