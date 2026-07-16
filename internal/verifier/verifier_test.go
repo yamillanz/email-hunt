@@ -229,3 +229,66 @@ func TestSMTPResponseCodes(t *testing.T) {
 		t.Errorf("smtpUserNotFound = %d, want 550", smtpUserNotFound)
 	}
 }
+
+func TestVerifyAllCount(t *testing.T) {
+	emails := []string{
+		"test@mailinator.com",
+		"not-an-email",
+		"user@this-domain-does-not-exist-xyz123.com",
+	}
+	ctx := context.Background()
+	results := VerifyAll(ctx, emails, 3, 0)
+	if len(results) != len(emails) {
+		t.Errorf("expected %d results, got %d", len(emails), len(results))
+	}
+	seen := make(map[string]bool)
+	for _, r := range results {
+		seen[r.Email] = true
+	}
+	for _, email := range emails {
+		if !seen[email] {
+			t.Errorf("missing result for %s", email)
+		}
+	}
+}
+
+func TestVerifyAllWithDelay(t *testing.T) {
+	emails := []string{"test@mailinator.com", "not-an-email"}
+	ctx := context.Background()
+	start := time.Now()
+	results := VerifyAll(ctx, emails, 2, 10*time.Millisecond)
+	elapsed := time.Since(start)
+	if len(results) != 2 {
+		t.Errorf("expected 2 results, got %d", len(results))
+	}
+	if elapsed < 10*time.Millisecond {
+		t.Errorf("delay not applied: elapsed=%v", elapsed)
+	}
+}
+
+func TestVerifyAllWorkersOne(t *testing.T) {
+	emails := []string{"a@mailinator.com", "b@mailinator.com", "c@mailinator.com"}
+	ctx := context.Background()
+	results := VerifyAll(ctx, emails, 1, 0)
+	if len(results) != 3 {
+		t.Errorf("expected 3 results, got %d", len(results))
+	}
+}
+
+func TestVerifyAllEmpty(t *testing.T) {
+	ctx := context.Background()
+	results := VerifyAll(ctx, nil, 5, 0)
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestVerifyAllContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	emails := []string{"test@mailinator.com"}
+	results := VerifyAll(ctx, emails, 1, time.Second)
+	if len(results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(results))
+	}
+}

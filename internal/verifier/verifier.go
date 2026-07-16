@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yamillanz/email-hunt/internal/classifier"
@@ -110,4 +111,41 @@ func randomString(n int) (string, error) {
 		result[i] = letters[idx.Int64()]
 	}
 	return string(result), nil
+}
+
+func VerifyAll(ctx context.Context, emails []string, workers int, delay time.Duration) []Result {
+	jobs := make(chan string, len(emails))
+	results := make(chan Result, len(emails))
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for email := range jobs {
+				results <- Verify(ctx, email)
+				if delay > 0 {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(delay):
+					}
+				}
+			}
+		}()
+	}
+
+	for _, email := range emails {
+		jobs <- email
+	}
+	close(jobs)
+
+	wg.Wait()
+	close(results)
+
+	var out []Result
+	for r := range results {
+		out = append(out, r)
+	}
+	return out
 }

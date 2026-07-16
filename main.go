@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"regexp"
 	"time"
+
+	"github.com/yamillanz/email-hunt/internal/generator"
+	"github.com/yamillanz/email-hunt/internal/verifier"
 )
 
 var version = "dev"
@@ -73,20 +77,47 @@ func run() int {
 		return 2
 	}
 
-	fmt.Fprintf(os.Stderr, "Looking for %s at %s...\n", fullName, domain)
+	fmt.Fprintf(os.Stderr, "Generating email combinations for %q at %s...\n", fullName, domain)
+	emails := generator.Generate(fullName, domain)
+	if len(emails) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: could not generate any email combinations\n")
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "Generated %d combinations\n", len(emails))
 
-	// TODO: Phase 2 — generate email combinations
-	// TODO: Phase 3 — classify domain/emails
-	// TODO: Phase 4-5 — MX lookup + SMTP verification
-	// TODO: Phase 6 — concurrent verification
-	// TODO: Phase 7 — format and display results
-	// TODO: Phase 8 — AI provider integration
+	// TODO: Phase 8 — AI provider: append additional combinations here
 
-	_ = concurrency
-	_ = delay
-	_ = aiProvider
+	fmt.Fprintf(os.Stderr, "Verifying with %d workers, %s delay...\n", *concurrency, *delay)
+	ctx := context.Background()
+	results := verifier.VerifyAll(ctx, emails, *concurrency, *delay)
 
+	printResults(results)
 	return 0
+}
+
+func printResults(results []verifier.Result) {
+	fmt.Println()
+	fmt.Println("Results:")
+	fmt.Println("-------")
+
+	for _, r := range results {
+		statusIcon := "?"
+		switch r.Status {
+		case verifier.StatusValid:
+			statusIcon = "✓"
+		case verifier.StatusInvalid:
+			statusIcon = "✗"
+		case verifier.StatusCatchAll:
+			statusIcon = "~"
+		}
+		category := ""
+		if r.Category.String() != "standard" {
+			category = " [" + r.Category.String() + "]"
+		}
+		fmt.Printf("  %s %s — %s%s\n", statusIcon, r.Email, r.Status, category)
+	}
+	fmt.Println()
+	fmt.Println("Disclaimer: Use this information responsibly and only for legitimate purposes.")
 }
 
 var domainRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$`)
