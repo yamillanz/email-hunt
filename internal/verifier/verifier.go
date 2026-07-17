@@ -3,6 +3,7 @@ package verifier
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/yamillanz/email-hunt/internal/classifier"
 )
+
+var smtpPorts = []string{"25", "2525"}
 
 type Result struct {
 	Email    string
@@ -60,8 +63,8 @@ func Verify(ctx context.Context, email string) Result {
 		return result
 	}
 
-	addr := net.JoinHostPort(strings.TrimSuffix(records[0].Host, "."), "25")
-	status, detail, err := dialAndVerify(ctx, addr, email)
+	host := strings.TrimSuffix(records[0].Host, ".")
+	status, detail, err := dialWithFallback(ctx, host, email)
 	if err != nil {
 		result.Status = StatusUnknown
 		result.Detail = err.Error()
@@ -71,6 +74,33 @@ func Verify(ctx context.Context, email string) Result {
 	result.Status = status
 	result.Detail = detail
 	return result
+}
+
+func dialWithFallback(ctx context.Context, host string, recipient string) (Status, string, error) {
+	var lastErr error
+	for _, port := range smtpPorts {
+		addr := net.JoinHostPort(host, port)
+		status, detail, err := dialAndVerify(ctx, addr, recipient)
+		if err == nil {
+			return status, detail, nil
+		}
+		lastErr = err
+		if !isNetworkError(err) {
+			return StatusUnknown, "", err
+		}
+	}
+	return StatusUnknown, "", fmt.Errorf("all SMTP ports (%v) failed: %w", smtpPorts, lastErr)
+}
+
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	return strings.Contains(err.Error(), "connect")
 }
 
 func isCatchAll(ctx context.Context, records []*net.MX, domain string) (bool, error) {
@@ -83,8 +113,8 @@ func isCatchAll(ctx context.Context, records []*net.MX, domain string) (bool, er
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	addr := net.JoinHostPort(strings.TrimSuffix(records[0].Host, "."), "25")
-	status, _, err := dialAndVerify(ctx, addr, randomEmail)
+	host := strings.TrimSuffix(records[0].Host, ".")
+	status, _, err := dialWithFallback(ctx, host, randomEmail)
 	if err != nil {
 		return false, err
 	}

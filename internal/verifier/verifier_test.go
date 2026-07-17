@@ -372,3 +372,60 @@ func TestVerifyWithMockServer(t *testing.T) {
 		t.Errorf("expected StatusValid, got %v", status)
 	}
 }
+
+func TestIsNetworkError(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		wantNet bool
+	}{
+		{"connect timeout", fmt.Errorf("connect to example.com:25: dial tcp: i/o timeout"), true},
+		{"connection refused", fmt.Errorf("connect to example.com:25: dial tcp: connection refused"), true},
+		{"net.OpError", &net.OpError{Op: "dial", Err: fmt.Errorf("timeout")}, true},
+		{"SMTP protocol error", fmt.Errorf("read greeting: short response: \"421\""), false},
+		{"nil error", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isNetworkError(tt.err)
+			if got != tt.wantNet {
+				t.Errorf("isNetworkError() = %v, want %v", got, tt.wantNet)
+			}
+		})
+	}
+}
+
+func TestDialWithFallbackFirstPortWorks(t *testing.T) {
+	srv := newMockSMTPServer(t, mockValidHandler())
+	defer srv.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	host, port, _ := net.SplitHostPort(srv.addr)
+	originalPorts := smtpPorts
+	smtpPorts = []string{port, "99999"}
+	defer func() { smtpPorts = originalPorts }()
+
+	status, _, err := dialWithFallback(ctx, host, "test@example.com")
+	if err != nil {
+		t.Fatalf("dialWithFallback failed: %v", err)
+	}
+	if status != StatusValid {
+		t.Errorf("expected StatusValid, got %v", status)
+	}
+}
+
+func TestDialWithFallbackAllFail(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	originalPorts := smtpPorts
+	smtpPorts = []string{"99998", "99999"}
+	defer func() { smtpPorts = originalPorts }()
+
+	_, _, err := dialWithFallback(ctx, "127.0.0.1", "test@example.com")
+	if err == nil {
+		t.Error("expected error when all ports fail")
+	}
+}
